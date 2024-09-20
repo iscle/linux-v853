@@ -23,7 +23,7 @@
 /* MMC timing mode switch bit */
 #define CCU_MMC_NEW_TIMING_MODE		BIT(30)
 
-#define CCU_MUX_KEY_VALUE		0x16aa0000
+#define CCU_KEY_VALUE		0x16aa0000
 
 struct device_node;
 

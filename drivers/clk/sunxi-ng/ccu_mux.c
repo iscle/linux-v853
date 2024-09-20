@@ -194,7 +194,7 @@ int ccu_mux_helper_set_parent(struct ccu_common *common,
 
 	/* The key field always reads as zero. */
 	if (common->features & CCU_FEATURE_KEY_FIELD)
-		reg |= CCU_MUX_KEY_VALUE;
+		reg |= CCU_KEY_VALUE;
 
 	reg &= ~GENMASK(cm->width + cm->shift - 1, cm->shift);
 	writel(reg | (index << cm->shift), common->base + common->reg);

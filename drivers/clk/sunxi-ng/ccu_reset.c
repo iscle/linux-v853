@@ -24,7 +24,7 @@ static int ccu_reset_assert(struct reset_controller_dev *rcdev,
 	reg = readl(ccu->base + map->reg);
 
 	if (map->features & CCU_FEATURE_KEY_FIELD)
-		reg |= CCU_RST_KEY_VALUE;
+		reg |= CCU_KEY_VALUE;
 
 	writel(reg & ~map->bit, ccu->base + map->reg);
 
@@ -46,7 +46,7 @@ static int ccu_reset_deassert(struct reset_controller_dev *rcdev,
 	reg = readl(ccu->base + map->reg);
 
 	if (map->features & CCU_FEATURE_KEY_FIELD)
-		reg |= CCU_RST_KEY_VALUE;
+		reg |= CCU_KEY_VALUE;
 
 	writel(reg | map->bit, ccu->base + map->reg);
 
