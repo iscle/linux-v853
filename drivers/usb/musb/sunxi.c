@@ -24,6 +24,7 @@
 #include <linux/usb/usb_phy_generic.h>
 #include <linux/workqueue.h>
 #include "musb_core.h"
+#include "musb_dma.h"
 
 /*
  * Register offsets, note sunxi musb has a different layout then most
@@ -55,6 +56,7 @@
 
 /* VEND0 bits */
 #define SUNXI_MUSB_VEND0_PIO_MODE		0
+#define SUNXI_MUSB_VEND0_DMA_MODE		1
 
 /* flags */
 #define SUNXI_MUSB_FL_ENABLED			0
@@ -173,6 +175,7 @@ static void sunxi_musb_post_root_reset_end(struct musb *musb)
 
 static irqreturn_t sunxi_musb_interrupt(int irq, void *__hci)
 {
+	irqreturn_t retval = IRQ_NONE;
 	struct musb *musb = __hci;
 	unsigned long flags;
 
@@ -196,11 +199,11 @@ static irqreturn_t sunxi_musb_interrupt(int irq, void *__hci)
 	if (musb->int_rx)
 		writew(musb->int_rx, musb->mregs + SUNXI_MUSB_INTRRX);
 
-	musb_interrupt(musb);
+	retval = musb_interrupt(musb);
 
 	spin_unlock_irqrestore(&musb->lock, flags);
 
-	return IRQ_HANDLED;
+	return retval;
 }
 
 static int sunxi_musb_host_notifier(struct notifier_block *nb,
@@ -244,7 +247,11 @@ static int sunxi_musb_init(struct musb *musb)
 			goto error_clk_disable;
 	}
 
-	writeb(SUNXI_MUSB_VEND0_PIO_MODE, musb->mregs + SUNXI_MUSB_VEND0);
+	if (IS_ENABLED(CONFIG_USB_SUNXI_DMA)) {
+		writeb(SUNXI_MUSB_VEND0_DMA_MODE, musb->mregs + SUNXI_MUSB_VEND0);
+	} else {
+		writeb(SUNXI_MUSB_VEND0_PIO_MODE, musb->mregs + SUNXI_MUSB_VEND0);
+	}
 
 	/* Register notifier before calling phy_init() */
 	ret = devm_extcon_register_notifier(glue->dev, glue->extcon,
@@ -316,16 +323,6 @@ static void sunxi_musb_disable(struct musb *musb)
 	struct sunxi_glue *glue = dev_get_drvdata(musb->controller->parent);
 
 	clear_bit(SUNXI_MUSB_FL_ENABLED, &glue->flags);
-}
-
-static struct dma_controller *
-sunxi_musb_dma_controller_create(struct musb *musb, void __iomem *base)
-{
-	return NULL;
-}
-
-static void sunxi_musb_dma_controller_destroy(struct dma_controller *c)
-{
 }
 
 static int sunxi_musb_set_mode(struct musb *musb, u8 mode)
@@ -607,7 +604,7 @@ static void sunxi_musb_writew(void __iomem *addr, unsigned offset, u16 data)
 }
 
 static const struct musb_platform_ops sunxi_musb_ops = {
-	.quirks		= MUSB_INDEXED_EP,
+	.quirks		= MUSB_DMA_SUNXI | MUSB_INDEXED_EP,
 	.init		= sunxi_musb_init,
 	.exit		= sunxi_musb_exit,
 	.enable		= sunxi_musb_enable,
@@ -644,6 +641,18 @@ static struct musb_fifo_cfg sunxi_musb_mode_cfg_5eps[] = {
 	MUSB_EP_FIFO_SINGLE(5, FIFO_RX, 512),
 };
 
+/* V853 */
+static struct musb_fifo_cfg sunxi_musb_mode_cfg_v853[] = {
+	MUSB_EP_FIFO_DOUBLE(1, FIFO_TX, 512),
+	MUSB_EP_FIFO_DOUBLE(1, FIFO_RX, 512),
+	MUSB_EP_FIFO_DOUBLE(2, FIFO_TX, 512),
+	MUSB_EP_FIFO_DOUBLE(2, FIFO_RX, 512),
+	MUSB_EP_FIFO_SINGLE(3, FIFO_RXTX, 1024),
+	MUSB_EP_FIFO_SINGLE(4, FIFO_RXTX, 512),
+	MUSB_EP_FIFO_DOUBLE(5, FIFO_TX, 512),
+	MUSB_EP_FIFO_DOUBLE(5, FIFO_RX, 512),
+};
+
 /* H3/V3s OTG supports only 4 endpoints */
 static struct musb_fifo_cfg sunxi_musb_mode_cfg_4eps[] = {
 	MUSB_EP_FIFO_SINGLE(1, FIFO_TX, 512),
@@ -664,6 +673,15 @@ static const struct musb_hdrc_config sunxi_musb_hdrc_config_5eps = {
 	/* Two FIFOs per endpoint, plus ep_0. */
 	.num_eps	= (ARRAY_SIZE(sunxi_musb_mode_cfg_5eps) / 2) + 1,
 	.ram_bits	= SUNXI_MUSB_RAM_BITS,
+};
+
+static const struct musb_hdrc_config sunxi_musb_hdrc_config_v853 = {
+	.fifo_cfg       = sunxi_musb_mode_cfg_v853,
+	.fifo_cfg_size  = ARRAY_SIZE(sunxi_musb_mode_cfg_v853),
+	.multipoint	= true,
+	.dyn_fifo	= true,
+	.num_eps	= 6,
+	.ram_bits	= 13,
 };
 
 static const struct musb_hdrc_config sunxi_musb_hdrc_config_4eps = {
@@ -835,6 +853,12 @@ static const struct sunxi_musb_cfg sun8i_h3_musb_cfg = {
 	.no_configdata = true,
 };
 
+static const struct sunxi_musb_cfg sun8i_v853_musb_cfg = {
+	.hdrc_config = &sunxi_musb_hdrc_config_v853,
+	.has_reset = true,
+	.no_configdata = true,
+};
+
 static const struct sunxi_musb_cfg suniv_f1c100s_musb_cfg = {
 	.hdrc_config = &sunxi_musb_hdrc_config_5eps,
 	.has_sram = true,
@@ -851,6 +875,8 @@ static const struct of_device_id sunxi_musb_match[] = {
 	  .data = &sun8i_a33_musb_cfg, },
 	{ .compatible = "allwinner,sun8i-h3-musb",
 	  .data = &sun8i_h3_musb_cfg, },
+	{ .compatible = "allwinner,sun8i-v853-musb",
+	  .data = &sun8i_v853_musb_cfg, },
 	{ .compatible = "allwinner,suniv-f1c100s-musb",
 	  .data = &suniv_f1c100s_musb_cfg, },
 	{}

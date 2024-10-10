@@ -329,6 +329,37 @@ static void txstate(struct musb *musb, struct musb_request *req)
 				musb_writew(epio, MUSB_TXCSR, csr);
 			}
 		}
+		
+		/* 
+		 * Program CSR endpoint first, then setup DMA.
+		 * Always use mode 1 for tx DMA transfers.
+		 */
+		if (musb_dma_sunxi(musb)) {
+			/*
+			* Enable Autoset according to table
+			* below
+			* bulk_split hb_mult	Autoset_Enable
+			*	0	0	Yes(Normal)
+			*	0	>0	No(High BW ISO)
+			*	1	0	Yes(HS bulk)
+			*	1	>0	Yes(FS bulk)
+			*/
+			if (!musb_ep->hb_mult ||
+				can_bulk_split(musb, musb_ep->type)) {
+				csr |= MUSB_TXCSR_AUTOSET;
+			} else {
+				csr &= ~MUSB_TXCSR_AUTOSET;
+			}
+			csr |= MUSB_TXCSR_DMAMODE |
+				MUSB_TXCSR_MODE | MUSB_TXCSR_DMAENAB;
+			csr &= ~MUSB_TXCSR_P_UNDERRUN;
+			musb_writew(epio, MUSB_TXCSR, csr);
+
+			use_dma = use_dma && c->channel_program(
+				musb_ep->dma, musb_ep->packet_sz,
+				musb_ep->dma->desired_mode,
+				request->dma + request->actual, request_size);
+		}
 
 		if (is_cppi_enabled(musb)) {
 			/* program endpoint CSR first, then setup DMA */
@@ -598,7 +629,7 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 			if (!is_buffer_mapped(req))
 				goto buffer_aint_mapped;
 
-			if (musb_dma_inventra(musb)) {
+			if (musb_dma_inventra(musb) || musb_dma_sunxi(musb)) {
 				struct dma_controller	*c;
 				struct dma_channel	*channel;
 				int			use_dma = 0;
@@ -856,7 +887,7 @@ void musb_g_rx(struct musb *musb, u8 epnum)
 		request->actual += musb_ep->dma->actual_len;
 
 #if defined(CONFIG_USB_INVENTRA_DMA) || defined(CONFIG_USB_TUSB_OMAP_DMA) || \
-	defined(CONFIG_USB_UX500_DMA)
+	defined(CONFIG_USB_UX500_DMA) || defined(CONFIG_USB_SUNXI_DMA)
 		/* Autoclear doesn't clear RxPktRdy for short packets */
 		if ((dma->desired_mode == 0 && !hw_ep->rx_double_buffered)
 				|| (dma->actual_len
@@ -896,7 +927,7 @@ void musb_g_rx(struct musb *musb, u8 epnum)
 			return;
 	}
 #if defined(CONFIG_USB_INVENTRA_DMA) || defined(CONFIG_USB_TUSB_OMAP_DMA) || \
-	defined(CONFIG_USB_UX500_DMA)
+	defined(CONFIG_USB_UX500_DMA) || defined(CONFIG_USB_SUNXI_DMA)
 exit:
 #endif
 	/* Analyze request */
