@@ -547,6 +547,16 @@
 			interrupt-names = "mc";
 			clocks = <&ccu CLK_BUS_OTG>;
 			resets = <&ccu RST_BUS_OTG>;
+			dmas = <&dma 30>, <&dma 30>,
+			       <&dma 31>, <&dma 31>,
+			       <&dma 32>, <&dma 32>,
+			       <&dma 33>, <&dma 33>,
+			       <&dma 34>, <&dma 34>;
+			dma-names = "rx1", "tx1",
+				    "rx2", "tx2",
+				    "rx3", "tx3",
+				    "rx4", "tx4",
+				    "rx5", "tx5";
 			extcon = <&usbphy 0>;
 			phys = <&usbphy 0>;
 			phy-names = "usb";
