@@ -24,6 +24,7 @@
 #include <linux/usb/usb_phy_generic.h>
 #include <linux/workqueue.h>
 #include "musb_core.h"
+#include "musb_dma.h"
 
 /*
  * Register offsets, note sunxi musb has a different layout then most
@@ -55,6 +56,7 @@
 
 /* VEND0 bits */
 #define SUNXI_MUSB_VEND0_PIO_MODE		0
+#define SUNXI_MUSB_VEND0_DMA_MODE		1
 
 /* flags */
 #define SUNXI_MUSB_FL_ENABLED			0
@@ -173,6 +175,7 @@ static void sunxi_musb_post_root_reset_end(struct musb *musb)
 
 static irqreturn_t sunxi_musb_interrupt(int irq, void *__hci)
 {
+	irqreturn_t retval = IRQ_NONE;
 	struct musb *musb = __hci;
 	unsigned long flags;
 
@@ -196,11 +199,11 @@ static irqreturn_t sunxi_musb_interrupt(int irq, void *__hci)
 	if (musb->int_rx)
 		writew(musb->int_rx, musb->mregs + SUNXI_MUSB_INTRRX);
 
-	musb_interrupt(musb);
+	retval = musb_interrupt(musb);
 
 	spin_unlock_irqrestore(&musb->lock, flags);
 
-	return IRQ_HANDLED;
+	return retval;
 }
 
 static int sunxi_musb_host_notifier(struct notifier_block *nb,
@@ -244,7 +247,11 @@ static int sunxi_musb_init(struct musb *musb)
 			goto error_clk_disable;
 	}
 
-	writeb(SUNXI_MUSB_VEND0_PIO_MODE, musb->mregs + SUNXI_MUSB_VEND0);
+	if (IS_ENABLED(CONFIG_USB_SUNXI_DMA)) {
+		writeb(SUNXI_MUSB_VEND0_DMA_MODE, musb->mregs + SUNXI_MUSB_VEND0);
+	} else {
+		writeb(SUNXI_MUSB_VEND0_PIO_MODE, musb->mregs + SUNXI_MUSB_VEND0);
+	}
 
 	/* Register notifier before calling phy_init() */
 	ret = devm_extcon_register_notifier(glue->dev, glue->extcon,
@@ -316,16 +323,6 @@ static void sunxi_musb_disable(struct musb *musb)
 	struct sunxi_glue *glue = dev_get_drvdata(musb->controller->parent);
 
 	clear_bit(SUNXI_MUSB_FL_ENABLED, &glue->flags);
-}
-
-static struct dma_controller *
-sunxi_musb_dma_controller_create(struct musb *musb, void __iomem *base)
-{
-	return NULL;
-}
-
-static void sunxi_musb_dma_controller_destroy(struct dma_controller *c)
-{
 }
 
 static int sunxi_musb_set_mode(struct musb *musb, u8 mode)
@@ -607,7 +604,7 @@ static void sunxi_musb_writew(void __iomem *addr, unsigned offset, u16 data)
 }
 
 static const struct musb_platform_ops sunxi_musb_ops = {
-	.quirks		= MUSB_INDEXED_EP,
+	.quirks		= MUSB_DMA_SUNXI | MUSB_INDEXED_EP,
 	.init		= sunxi_musb_init,
 	.exit		= sunxi_musb_exit,
 	.enable		= sunxi_musb_enable,

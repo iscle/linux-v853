@@ -168,7 +168,7 @@ static inline void musb_h_tx_dma_start(struct musb_hw_ep *ep)
 	/* NOTE: no locks here; caller should lock and select EP */
 	txcsr = musb_readw(ep->regs, MUSB_TXCSR);
 	txcsr |= MUSB_TXCSR_DMAENAB | MUSB_TXCSR_H_WZC_BITS;
-	if (is_cppi_enabled(ep->musb))
+	if (is_cppi_enabled(ep->musb) || musb_dma_sunxi(ep->musb))
 		txcsr |= MUSB_TXCSR_DMAMODE;
 	musb_writew(ep->regs, MUSB_TXCSR, txcsr);
 }
@@ -268,7 +268,7 @@ start:
 
 		if (!hw_ep->tx_channel)
 			musb_h_tx_start(hw_ep);
-		else if (is_cppi_enabled(musb) || tusb_dma_omap(musb))
+		else if (is_cppi_enabled(musb) || musb_dma_sunxi(musb) || tusb_dma_omap(musb))
 			musb_h_tx_dma_start(hw_ep);
 	}
 }
@@ -630,7 +630,7 @@ static bool musb_tx_dma_program(struct dma_controller *dma,
 	u16			pkt_size = qh->maxpacket;
 	u8			mode;
 
-	if (musb_dma_inventra(hw_ep->musb) || musb_dma_ux500(hw_ep->musb))
+	if (musb_dma_inventra(hw_ep->musb) || musb_dma_ux500(hw_ep->musb) || musb_dma_sunxi(hw_ep->musb))
 		musb_tx_dma_set_mode_mentor(hw_ep, qh,
 					    &length, &mode);
 	else if (is_cppi_enabled(hw_ep->musb) || tusb_dma_omap(hw_ep->musb))
@@ -861,7 +861,7 @@ finish:
 
 		/* kick things off */
 
-		if ((is_cppi_enabled(musb) || tusb_dma_omap(musb)) && dma_channel) {
+		if ((is_cppi_enabled(musb) || musb_dma_sunxi(musb) || tusb_dma_omap(musb)) && dma_channel) {
 			/* Candidate for DMA */
 			dma_channel->actual_len = 0L;
 			qh->segsize = len;
@@ -1411,7 +1411,7 @@ done:
 	} else if ((usb_pipeisoc(pipe) || transfer_pending) && dma) {
 		if (musb_tx_dma_program(musb->dma_controller, hw_ep, qh, urb,
 				offset, length)) {
-			if (is_cppi_enabled(musb) || tusb_dma_omap(musb))
+			if (is_cppi_enabled(musb) || musb_dma_sunxi(musb) || tusb_dma_omap(musb))
 				musb_h_tx_dma_start(hw_ep);
 			return;
 		}
@@ -1851,7 +1851,7 @@ void musb_host_rx(struct musb *musb, u8 epnum)
 
 	/* FIXME this is _way_ too much in-line logic for Mentor DMA */
 	if (!musb_dma_inventra(musb) && !musb_dma_ux500(musb) &&
-	    (rx_csr & MUSB_RXCSR_H_REQPKT)) {
+	    !musb_dma_sunxi(musb) && (rx_csr & MUSB_RXCSR_H_REQPKT)) {
 		/* REVISIT this happened for a while on some short reads...
 		 * the cleanup still needs investigation... looks bad...
 		 * and also duplicates dma cleanup code above ... plus,
@@ -1883,7 +1883,7 @@ void musb_host_rx(struct musb *musb, u8 epnum)
 		musb_writew(hw_ep->regs, MUSB_RXCSR, val);
 
 		if (musb_dma_inventra(musb) || musb_dma_ux500(musb) ||
-		    musb_dma_cppi41(musb)) {
+		    musb_dma_cppi41(musb) || musb_dma_sunxi(musb)) {
 			    done = musb_rx_dma_inventra_cppi41(c, hw_ep, qh, urb, xfer_len);
 			    musb_dbg(hw_ep->musb,
 				    "ep %d dma %s, rxcsr %04x, rxcount %d",
@@ -1912,7 +1912,7 @@ void musb_host_rx(struct musb *musb, u8 epnum)
 
 		/* we are expecting IN packets */
 		if ((musb_dma_inventra(musb) || musb_dma_ux500(musb) ||
-		    musb_dma_cppi41(musb)) && dma) {
+		    musb_dma_cppi41(musb) || musb_dma_sunxi(musb)) && dma) {
 			musb_dbg(hw_ep->musb,
 				"RX%d count %d, buffer 0x%llx len %d/%d",
 				epnum, musb_readw(epio, MUSB_RXCOUNT),

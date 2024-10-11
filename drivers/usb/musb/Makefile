@@ -31,6 +31,7 @@ obj-$(CONFIG_USB_MUSB_POLARFIRE_SOC)		+= mpfs.o
 # though PIO is always there to back up DMA, and for ep0
 
 musb_hdrc-$(CONFIG_USB_INVENTRA_DMA)		+= musbhsdma.o
+musb_hdrc-$(CONFIG_USB_SUNXI_DMA)		+= sunxi_dma.o
 musb_hdrc-$(CONFIG_USB_TUSB_OMAP_DMA)		+= tusb6010_omap.o
 musb_hdrc-$(CONFIG_USB_UX500_DMA)		+= ux500_dma.o
 musb_hdrc-$(CONFIG_USB_TI_CPPI41_DMA)		+= musb_cppi41.o
